@@ -8,6 +8,7 @@
 #include "Eigen-3.3/Eigen/Core"
 #include "Eigen-3.3/Eigen/QR"
 #include "json.hpp"
+#include "spline.h"
 
 using namespace std;
 
@@ -18,6 +19,7 @@ using json = nlohmann::json;
 constexpr double pi() { return M_PI; }
 double deg2rad(double x) { return x * pi() / 180; }
 double rad2deg(double x) { return x * 180 / pi(); }
+double mps_to_mph =2.2369362920544; //constant for m/s to mph
 
 // Checks if the SocketIO event has JSON data.
 // If there is data the JSON object in string format will be returned,
@@ -38,10 +40,10 @@ double distance(double x1, double y1, double x2, double y2)
 {
 	return sqrt((x2-x1)*(x2-x1)+(y2-y1)*(y2-y1));
 }
-int ClosestWaypoint(double x, double y, const vector<double> &maps_x, const vector<double> &maps_y)
+int ClosestWaypoint(double x, double y, vector<double> maps_x, vector<double> maps_y)
 {
 
-	double closestLen = 100000; //large number
+	double closestLen = 100000;
 	int closestWaypoint = 0;
 
 	for(int i = 0; i < maps_x.size(); i++)
@@ -61,7 +63,7 @@ int ClosestWaypoint(double x, double y, const vector<double> &maps_x, const vect
 
 }
 
-int NextWaypoint(double x, double y, double theta, const vector<double> &maps_x, const vector<double> &maps_y)
+int NextWaypoint(double x, double y, double theta, vector<double> maps_x, vector<double> maps_y)
 {
 
 	int closestWaypoint = ClosestWaypoint(x,y,maps_x,maps_y);
@@ -83,7 +85,7 @@ int NextWaypoint(double x, double y, double theta, const vector<double> &maps_x,
 }
 
 // Transform from Cartesian x,y coordinates to Frenet s,d coordinates
-vector<double> getFrenet(double x, double y, double theta, const vector<double> &maps_x, const vector<double> &maps_y)
+vector<double> getFrenet(double x, double y, double theta, vector<double> maps_x, vector<double> maps_y)
 {
 	int next_wp = NextWaypoint(x,y, theta, maps_x,maps_y);
 
@@ -132,7 +134,7 @@ vector<double> getFrenet(double x, double y, double theta, const vector<double> 
 }
 
 // Transform from Frenet s,d coordinates to Cartesian x,y
-vector<double> getXY(double s, double d, const vector<double> &maps_s, const vector<double> &maps_x, const vector<double> &maps_y)
+vector<double> getXY(double s, double d, vector<double> maps_s, vector<double> maps_x, vector<double> maps_y)
 {
 	int prev_wp = -1;
 
@@ -158,6 +160,30 @@ vector<double> getXY(double s, double d, const vector<double> &maps_s, const vec
 	return {x,y};
 
 }
+//Get distance and velocity of the another car
+vector<double> getDistance_s_and_speed(int path_size, double car_s, vector<double> current_sensor_fusion )
+{
+
+    double vx = current_sensor_fusion[3];
+    double vy = current_sensor_fusion[4];
+    double current_speed = (sqrt(vx * vx + vy * vy));
+    double current_car_s = current_sensor_fusion[5] + ((double) path_size *  0.02 * current_speed);//it is in m
+    double speed_mph = current_speed*mps_to_mph;
+    double distance_s = current_car_s - car_s;
+    return {distance_s,speed_mph };
+}
+
+int get_left_lane_limit(int lane)
+{
+    int limit = 4*(lane);
+    return limit;
+}
+int get_right_lane_limit(int lane)
+{
+    int limit = 4*(lane+1);
+    return limit;
+}
+
 
 int main() {
   uWS::Hub h;
@@ -173,6 +199,7 @@ int main() {
   string map_file_ = "../data/highway_map.csv";
   // The max s value before wrapping around the track back to 0
   double max_s = 6945.554;
+
 
   ifstream in_map_(map_file_.c_str(), ifstream::in);
 
@@ -196,7 +223,9 @@ int main() {
   	map_waypoints_dy.push_back(d_y);
   }
 
-  h.onMessage([&map_waypoints_x,&map_waypoints_y,&map_waypoints_s,&map_waypoints_dx,&map_waypoints_dy](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
+  int lane = 1;
+  int lane_change_wp = 0;
+  h.onMessage([&map_waypoints_x,&map_waypoints_y,&map_waypoints_s,&map_waypoints_dx,&map_waypoints_dy,&lane,&lane_change_wp](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
                      uWS::OpCode opCode) {
     // "42" at the start of the message means there's a websocket message event.
     // The 4 signifies a websocket message
@@ -212,42 +241,280 @@ int main() {
         
         string event = j[0].get<string>();
         
-        if (event == "telemetry") {
-          // j[1] is the data JSON object
-          
-        	// Main car's localization Data
-          	double car_x = j[1]["x"];
-          	double car_y = j[1]["y"];
-          	double car_s = j[1]["s"];
-          	double car_d = j[1]["d"];
-          	double car_yaw = j[1]["yaw"];
-          	double car_speed = j[1]["speed"];
+        if (event == "telemetry")
+        {
+            // j[1] is the data JSON object
 
-          	// Previous path data given to the Planner
-          	auto previous_path_x = j[1]["previous_path_x"];
-          	auto previous_path_y = j[1]["previous_path_y"];
-          	// Previous path's end s and d values 
-          	double end_path_s = j[1]["end_path_s"];
-          	double end_path_d = j[1]["end_path_d"];
+            // Main car's localization Data
+            double car_x = j[1]["x"];
+            double car_y = j[1]["y"];
+            double car_s = j[1]["s"];
+            double car_d = j[1]["d"];
+            double car_yaw = j[1]["yaw"];
+            double car_speed = j[1]["speed"];
+            //cout <<car_speed<< endl ;
+            // Previous path data given to the Planner
+            auto previous_path_x = j[1]["previous_path_x"];
+            auto previous_path_y = j[1]["previous_path_y"];
+            // Previous path's end s and d values
+            double end_path_s = j[1]["end_path_s"];
+            double end_path_d = j[1]["end_path_d"];
 
-          	// Sensor Fusion Data, a list of all other cars on the same side of the road.
-          	auto sensor_fusion = j[1]["sensor_fusion"];
+            // Sensor Fusion Data, a list of all other cars on the same side of the road.
+            auto sensor_fusion = j[1]["sensor_fusion"];
+            int path_size = previous_path_x.size();
+            int next_wp = -1;
+            double pos_x;
+            double pos_y;
+            double angle;
+            double ref_speed = 49.5; //mph
 
-          	json msgJson;
+            if(path_size <= 0)
+            {
+                pos_x = car_x;
+                pos_y = car_y;
+                angle = deg2rad(car_yaw);
+                next_wp = NextWaypoint(pos_x, pos_y, angle, map_waypoints_x,map_waypoints_y);
+            }
+            else
+            {
 
-          	vector<double> next_x_vals;
-          	vector<double> next_y_vals;
+                pos_x = previous_path_x[path_size-1];
+                pos_y = previous_path_y[path_size-1];
+                double pos_x2 = previous_path_x[path_size-2];
+                double pos_y2 = previous_path_y[path_size-2];
+                angle = atan2(pos_y-pos_y2,pos_x-pos_x2);
+                next_wp = NextWaypoint(pos_x,pos_y,angle,map_waypoints_x,map_waypoints_y);
+                car_s = end_path_s;
+                car_speed = (sqrt((pos_x-pos_x2)*(pos_x-pos_x2)+(pos_y-pos_y2)*(pos_y-pos_y2))/0.02)*mps_to_mph;
+
+            }
+
+            double closestDistance_s = 100000;
+            bool change_lane = false; // the default is to not perform the change lane
+            for (int i = 0; i < sensor_fusion.size(); i++)
+            {
+                float d = sensor_fusion[i][6];
+                if(d > get_left_lane_limit(lane) && d <get_right_lane_limit(lane) )//only evaluates the cars in the same lane
+                {
+                    //for the current lane, it only evaluates the cars which are in front of my car
+                    vector<double> check_distance_s_and_speed = getDistance_s_and_speed (path_size, car_s, sensor_fusion[i]);
+                    //check if the other car's value is greater than car_s (positive distance) and gap
+                    if ((check_distance_s_and_speed[0]>0)  && (check_distance_s_and_speed[0] < closestDistance_s ))
+                    {
+                        closestDistance_s = check_distance_s_and_speed[0];
+                        if((closestDistance_s >= 25) && (closestDistance_s < 35)) //it is in a good distance but it will be better if we change of lane
+                        {
+                            ref_speed = check_distance_s_and_speed[1];//follow up the other car speed
+                            change_lane = true;
+                            //cout<<"distance"<<check_distance_s_and_speed[0]<<endl;
+                        }
+                        else if ((closestDistance_s) < 25)
+                        {
+                            ref_speed = (check_distance_s_and_speed[1])-5; //reduce 5 mph from the current speed of the other car
+                            change_lane = true;
+                            //cout<<"distance"<<check_distance_s_and_speed[0]<<endl;
+                        }
+                    }
+                }
+            }
 
 
-          	// TODO: define a path made up of (x,y) points that the car will visit sequentially every .02 seconds
-          	msgJson["next_x"] = next_x_vals;
-          	msgJson["next_y"] = next_y_vals;
+            if(change_lane && ((next_wp-lane_change_wp)% (map_waypoints_x.size()) > 2))
+            {
+                if((lane >= 0 && lane <=2)) //evaluate if it is on the road
+                {
+                    vector<double> check_distance_s_and_speed;
+                    float d ;
+                    bool change_right_is_possbile = true;
+                    bool change_left_is_possbile = true;
+                    double closest_left_distance = 100000;
+                    double closest_right_distance = 100000;
 
-          	auto msg = "42[\"control\","+ msgJson.dump()+"]";
+                    for(int i = 0; i < sensor_fusion.size(); i++)
+                    {
+                        d = sensor_fusion[i][6];
+                        //evaluate if it is posible to move to right or left, the default is tha it is posible until we got if there is a car very close
+                        if ((d > get_left_lane_limit(lane+1) && d < get_right_lane_limit(lane+1)) || (d > get_left_lane_limit(lane-1) && d < get_right_lane_limit(lane-1)))
+                        {
+                            check_distance_s_and_speed = getDistance_s_and_speed (path_size, car_s, sensor_fusion[i]);
+                            if(d > get_left_lane_limit(lane+1) && d < get_right_lane_limit(lane+1) )
+                            {
+                                if(abs(check_distance_s_and_speed[0] ) < 25 )
+                                {
+                                    if (check_distance_s_and_speed[0] >-10)
+                                    {
+                                        change_right_is_possbile = false;
+                                    }
+                                    else if ((check_distance_s_and_speed[0] <=-10 ) && (car_speed -check_distance_s_and_speed[1] <3 ))
+                                    {
+                                        change_right_is_possbile = false;
+                                    }
+                                }
+                                if (check_distance_s_and_speed[0] >0 && (closest_right_distance > check_distance_s_and_speed[0]))
+                                {
+                                    closest_right_distance = check_distance_s_and_speed[0];
+                                }
+                                //cout<<"distance right "<<check_distance_s_and_speed[0]<< "  speed: "<<check_distance_s_and_speed[1]<<endl;
+                            }
+                            if (d > get_left_lane_limit(lane-1) && d < get_right_lane_limit(lane-1) )
+                            {
+                                if(abs(check_distance_s_and_speed[0] ) < 25 )
+                                {
+                                    if (check_distance_s_and_speed[0] >-10)
+                                    {
+                                        change_left_is_possbile = false;
+                                    }
+                                    else if ((check_distance_s_and_speed[0] <=-10 ) && (car_speed -check_distance_s_and_speed[1] <3 ))
+                                    {
+                                        change_left_is_possbile = false;
+                                    }
+                                }
+                                if (check_distance_s_and_speed[0] >0 && (closest_left_distance > check_distance_s_and_speed[0]))
+                                {
+                                    closest_left_distance = check_distance_s_and_speed[0];
+                                }
+                                //cout<<"distance left "<<check_distance_s_and_speed[0]<< "  speed: "<<check_distance_s_and_speed[1]<<endl;
 
-          	//this_thread::sleep_for(chrono::milliseconds(1000));
-          	ws.send(msg.data(), msg.length(), uWS::OpCode::TEXT);
-          
+
+                            }
+                        }
+                    }
+                    //cout<<"closest_left_distance "<<closest_left_distance<<"    closest_right_distance"<<closest_right_distance<<endl;
+                    //cout <<"lane " <<lane<<"  change_left_is_possbile "<<change_left_is_possbile<<"   change_right_is_possbile"<< change_right_is_possbile<<endl;
+                    if (car_speed <45) //only try to change of line if the car speed < 45 mph
+                    {
+
+                        if (lane ==1 && change_left_is_possbile && change_right_is_possbile)
+                        {
+                            if (closest_left_distance>closest_right_distance){
+                                lane -=1;
+                                lane_change_wp = next_wp;
+                            }
+                            else {
+                                lane +=1;
+                                lane_change_wp = next_wp;
+
+                            };
+                        }
+                        else if (change_left_is_possbile && (lane-1 >=0)) //check if the new lane is still on the road
+                        {
+                            lane -=1;
+                            lane_change_wp = next_wp;
+                        }
+                        else if (change_right_is_possbile && (lane+1 <=2)) //check if the new lane is still on the road
+                        {
+                            lane += 1;
+                            lane_change_wp = next_wp;
+                        }
+                    }
+
+
+
+                }
+            }
+
+            vector<double> ptsx;
+            vector<double> ptsy;
+
+            if(path_size ==0)
+            {
+                double prev_car_x = car_x - cos(car_yaw);
+                double prev_car_y = car_y - sin(car_yaw);
+
+                ptsx.push_back(prev_car_x);
+                ptsy.push_back(prev_car_y);
+
+                ptsx.push_back(car_x);
+                ptsy.push_back(car_y);
+            }
+            else
+            {
+                ptsx.push_back(previous_path_x[path_size-2]);
+                ptsy.push_back(previous_path_y[path_size-2]);
+
+                ptsx.push_back(previous_path_x[path_size-1]);
+                ptsy.push_back(previous_path_y[path_size-1]);
+
+
+            }
+            //get_left_lane_limit(lane)+2 will be the middle
+
+            //getXY(double s, double d, vector<double> maps_s, vector<double> maps_x, vector<double> maps_y)
+            vector<double> wp_value;
+            wp_value= getXY(car_s+25,(get_left_lane_limit(lane)+2),map_waypoints_s,map_waypoints_x,map_waypoints_y);
+            ptsx.push_back(wp_value[0]);
+            ptsy.push_back(wp_value[1]);
+
+            wp_value= getXY(car_s+50,(get_left_lane_limit(lane)+2),map_waypoints_s,map_waypoints_x,map_waypoints_y);
+            ptsx.push_back(wp_value[0]);
+            ptsy.push_back(wp_value[1]);
+
+            wp_value= getXY(car_s+75,(get_left_lane_limit(lane)+2),map_waypoints_s,map_waypoints_x,map_waypoints_y);
+            ptsx.push_back(wp_value[0]);
+            ptsy.push_back(wp_value[1]);
+
+
+            for (int i = 0; i < ptsx.size(); i++ )
+            {
+                double shift_x = ptsx[i]-pos_x;
+                double shift_y = ptsy[i]-pos_y;
+                ptsx[i] = (shift_x *cos(0-angle)-shift_y*sin(0-angle));
+                ptsy[i] = (shift_x *sin(0-angle)+shift_y*cos(0-angle));
+            }
+
+
+            tk::spline s;
+            s.set_points(ptsx,ptsy); //interpolation in order to get the future y position
+
+            vector<double> next_x_vals;
+            vector<double> next_y_vals;
+
+            for(int i = 0; i < path_size; i++)
+            {
+                next_x_vals.push_back(previous_path_x[i]);
+                next_y_vals.push_back(previous_path_y[i]);
+            }
+
+            double d_x = 25.0;
+            double d_y = s(d_x);
+            double total_dist = sqrt((d_x)*(d_x)+(d_y)*(d_y));
+            //d_x and total_dist are used ony to get the dist_inc_x
+
+
+            double x_internal_path = 0;
+            double y_internal_path = 0;
+            double a = 3 *0.02* mps_to_mph;
+            double dist_inc_x;
+            for (int i = 1; i <= 50-path_size; i++) {
+                if(ref_speed > car_speed)
+                {
+                    car_speed+=a  ;
+                }
+                else if(ref_speed < car_speed) //keep a max speed
+                {
+                    car_speed-=a  ;
+                }
+                dist_inc_x= (d_x /total_dist)* ( 0.02 *car_speed / mps_to_mph); //the distance will be in m and get back to 20 milliseconds
+                x_internal_path+=dist_inc_x;
+                y_internal_path= s(x_internal_path);
+                next_x_vals.push_back(pos_x + x_internal_path *cos(angle)-y_internal_path*sin(angle) );
+                next_y_vals.push_back(pos_y + x_internal_path *sin(angle)+y_internal_path*cos(angle) );
+                cout <<"posx: "<<pos_x + x_internal_path *cos(angle)-y_internal_path*sin(angle)<<"   pos_y: "<<pos_y + x_internal_path *sin(angle)+y_internal_path*cos(angle) <<endl;
+            }
+
+            json msgJson;
+            msgJson["next_x"] = next_x_vals;
+            msgJson["next_y"] = next_y_vals;
+
+            auto msg = "42[\"control\","+ msgJson.dump()+"]";
+
+            //this_thread::sleep_for(chrono::milliseconds(1000));
+            ws.send(msg.data(), msg.length(), uWS::OpCode::TEXT);
+
+
+
+
         }
       } else {
         // Manual driving
