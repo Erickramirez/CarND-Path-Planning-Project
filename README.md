@@ -33,10 +33,10 @@ The car is not presenting collisions, it is avoided with the behavior planning (
 Also, it is checking if the next lane is free to change.
 
 #### The car stays in its lane, except for the time between changing lanes.
-it is asier with Frenet and the spline interoplation, then it will make a smooth lange change.
+it is easier with Frenet and the spline interoplation, then it will make a smooth lange change.
 
 #### The car is able to change lanes
-If it is safe for a change lane, then tha change on the variable lane will be use for the the spline interoplation and it would make the lane change smooth. Check the lines 445-455, it is generationg XY points for the interpolation.
+If it is safe for a change lane, then if there is a change on the variable lane, it  will be use for the the spline interoplation and it would make the lane change smooth. Check the lines 445-455, it is generationg XY points for the interpolation.
 It is considering when behind a slower moving car and an adjacent lane is clear of other traffic.
    
 ### Simulator.
