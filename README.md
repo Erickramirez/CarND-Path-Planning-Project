@@ -1,5 +1,46 @@
+[//]: # (Image References)
+[image1]: ./images/frenet-7.png
 # CarND-Path-Planning-Project
 Self-Driving Car Engineer Nanodegree Program
+
+## Reflection
+The model is using Frenet coordinate, it is a easer way to manage the position of an object compared to Cartesian coordinate system, because it is really simple to know the current position of an object. Frenet is using 2 cordinates: d and s, see the following image:
+![alt text][image1] Frenet vs Cartesian coordinates (Image from Udacity)
+
+* `S` represents the segment of road and d represents the line of that road. Then it is easy to know the current lane of the car (based on d position) `see the get_left_lane_limit function as example to convert lane to d position` and s is used to know the distance along the highway.
+
+* I used an implementation based on finite state machines, using conditions on the behavior it could take decisions about: follow up the car that is in front, go to max speed, reduce velocity and change lane. It is the simplest implementation, but it works for a highway; in a city or parking lot it will not work, a better approach for those behaviors will be hybrid A* for instance. Those conditions about the behavior planning are in the lines  293 to 399 in the `main.cpp` file.
+For trajectory generation and generates smooth trajectories, I used [spline interpolation] (http://kluge.in-chemnitz.de/opensource/spline/) generates, it has been implemented in the line 468, and using car position plus expected spaces on this, normally it is adding 35 meters for each point.
+
+
+#### The car is able to drive at least 4.32 miles without incident..
+Please check the following video:
+
+[![](https://img.youtube.com/vi/nWvCBcRyQa0/0.jpg)](https://www.youtube.com/watch?v=nWvCBcRyQa0 "Video")
+
+#### The car drives according to the speed limit.
+There is a ref_speed variable which help us to regulate the speed of the car, this "speed limit" is by defult 49.5 mph, but it will change according with the situation. for instance, if it will follow up a car, the ref_speed will change;
+The line 308 and 314 are examples of this. Also, in order to avoid to get faster than the speed limit (ref_speed) in the lines 490 - 497 it is validating the expected speed (add or reduce acceleration) and the dist_inc_x (line 498) will help to know the distance based on the speed.
+
+#### Max Acceleration and Jerk are not Exceeded.
+For this, the aceleration used to add or remove to the car speed is 3m/s (check the line 487) it is converting m/s to mph. Then with this constant acceleration it is avoiding max acceleration and max Jerk.
+Note: for distance I used meters and for speed I used mph, there is a constant for this conversion (line 22), in the video you can check that there is a point where it got max acceleration, I think that it is because the spline interoplation wasnt smoth as we need and the car was fast.
+In order to avoid it I keept the car accerelation as a constant and the poins for interpolation as constant, maybe it could be better if the point generation for the interpolation is based on the current speed.
+At this point the configuration elected is working most of the time. for the interpolation, the distance used is 35 meters. (Check the lines 445-455)
+
+#### Car does not have collisions.
+The car is not presenting collisions, it is avoided with the behavior planning (check the lines 293 to 399 ) it is trying to keep a safe position in order to avoid collitions. 
+Also, it is checking if the next lane is free to change.
+
+#### The car stays in its lane, except for the time between changing lanes.
+it is asier with Frenet and the spline interoplation, then it will make a smooth lange change.
+
+#### The car is able to change lanes
+If it is safe for a change lane, then tha change on the variable lane will be use for the the spline interoplation and it would make the lane change smooth. Check the lines 445-455, it is generationg XY points for the interpolation.
+It is considering when behind a slower moving car and an adjacent lane is clear of other traffic.
+   
+### Simulator.
+You can download the Term3 Simulator which contains the Path Planning Project from the [releases tab (https://github.com/udacity/self-driving-car-sim/releases).
    
 ### Simulator.
 You can download the Term3 Simulator which contains the Path Planning Project from the [releases tab (https://github.com/udacity/self-driving-car-sim/releases).
