@@ -382,32 +382,32 @@ int main() {
                     }
                     //cout<<"closest_left_distance "<<closest_left_distance<<"    closest_right_distance"<<closest_right_distance<<endl;
                     //cout <<"lane " <<lane<<"  change_left_is_possbile "<<change_left_is_possbile<<"   change_right_is_possbile"<< change_right_is_possbile<<endl;
-                    if (car_speed <45) //only try to change of line if the car speed < 45 mph
+
+
+
+                    if (lane ==1 && change_left_is_possbile && change_right_is_possbile)
                     {
-
-                        if (lane ==1 && change_left_is_possbile && change_right_is_possbile)
-                        {
-                            if (closest_left_distance>closest_right_distance){
-                                lane -=1;
-                                lane_change_wp = next_wp;
-                            }
-                            else {
-                                lane +=1;
-                                lane_change_wp = next_wp;
-
-                            };
-                        }
-                        else if (change_left_is_possbile && (lane-1 >=0)) //check if the new lane is still on the road
-                        {
+                        if (closest_left_distance>closest_right_distance){
                             lane -=1;
                             lane_change_wp = next_wp;
                         }
-                        else if (change_right_is_possbile && (lane+1 <=2)) //check if the new lane is still on the road
-                        {
-                            lane += 1;
+                        else {
+                            lane +=1;
                             lane_change_wp = next_wp;
-                        }
+
+                        };
                     }
+                    else if (change_left_is_possbile && (lane-1 >=0)) //check if the new lane is still on the road
+                    {
+                        lane -=1;
+                        lane_change_wp = next_wp;
+                    }
+                    else if (change_right_is_possbile && (lane+1 <=2)) //check if the new lane is still on the road
+                    {
+                        lane += 1;
+                        lane_change_wp = next_wp;
+                    }
+
 
 
 
@@ -442,15 +442,15 @@ int main() {
 
             //getXY(double s, double d, vector<double> maps_s, vector<double> maps_x, vector<double> maps_y)
             vector<double> wp_value;
-            wp_value= getXY(car_s+25,(get_left_lane_limit(lane)+2),map_waypoints_s,map_waypoints_x,map_waypoints_y);
+            wp_value= getXY(car_s+35,(get_left_lane_limit(lane)+2),map_waypoints_s,map_waypoints_x,map_waypoints_y);
             ptsx.push_back(wp_value[0]);
             ptsy.push_back(wp_value[1]);
 
-            wp_value= getXY(car_s+50,(get_left_lane_limit(lane)+2),map_waypoints_s,map_waypoints_x,map_waypoints_y);
+            wp_value= getXY(car_s+70,(get_left_lane_limit(lane)+2),map_waypoints_s,map_waypoints_x,map_waypoints_y);
             ptsx.push_back(wp_value[0]);
             ptsy.push_back(wp_value[1]);
 
-            wp_value= getXY(car_s+75,(get_left_lane_limit(lane)+2),map_waypoints_s,map_waypoints_x,map_waypoints_y);
+            wp_value= getXY(car_s+105,(get_left_lane_limit(lane)+2),map_waypoints_s,map_waypoints_x,map_waypoints_y);
             ptsx.push_back(wp_value[0]);
             ptsy.push_back(wp_value[1]);
 
